@@ -11,9 +11,9 @@ import comfy.utils
 from contextlib import nullcontext
 from .lvdm.models.samplers.ddim import DDIMSampler
 
-def split_and_trim(input_string):
+def split_and_trim(input_string, character):
     # Split the string into an array using '|' as a separator
-    array = input_string.split('|')
+    array = input_string.split(character)
     
     # Trim white space from each element in the array
     trimmed_array = [element.strip() for element in array]
@@ -364,8 +364,9 @@ class DynamiCrafterBatchInterpolation:
             H = H - (H % 64)
         if orig_H % 64 != 0 or orig_W % 64 != 0:
             images = F.interpolate(images, size=(H, W), mode="bicubic")        
-		
-        split_prompt = split_and_trim(prompt)
+
+        global_prompt = split_and_trim(prompt, ':')
+        split_prompt = split_and_trim(global_prompt[-1], '|')
         out = []
         autocast_condition = (dtype != torch.float32) and not comfy.model_management.is_device_mps(device)
         with torch.autocast(comfy.model_management.get_autocast_device(device), dtype=dtype) if autocast_condition else nullcontext():
@@ -390,13 +391,13 @@ class DynamiCrafterBatchInterpolation:
                 self.model.cond_stage_model.to(device)
                 self.model.embedder.to(device)
                 self.model.image_proj_model.to(device)
-                
-                try:
-                    text_emb = self.model.get_learned_conditioning([split_prompt[i]])
-                    print("Prompt: ", split_prompt[i])
-                except:
-                    text_emb = self.model.get_learned_conditioning([split_prompt[0]])
-                    print("Prompt: ", split_prompt[0])
+
+                use_prompt = split_prompt[i] if len(split_prompt) > i else split_prompt[-1]
+                if len(global_prompt) > 1:
+                    use_prompt = global_prompt[0] + " " + use_prompt
+
+                text_emb = self.model.get_learned_conditioning([use_prompt])
+                print("Prompt: ", use_prompt)
 
                 cond_images = self.model.embedder(image)
                 img_emb = self.model.image_proj_model(cond_images)
